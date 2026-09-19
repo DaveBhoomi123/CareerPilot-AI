@@ -1,0 +1,5 @@
+Alex Morgan | Junior Python Developer
+Summary: Python and Django developer who enjoys building useful web applications.
+Skills: Python, Django, SQL, SQLite, HTML, CSS, Bootstrap, JavaScript, Git, GitHub, REST APIs, testing.
+Project: Built a student task manager with Django authentication, task CRUD, due dates, and Bootstrap templates. Wrote unit tests for permissions and form validation. Used Git for version control.
+Education: Bachelor of Computer Science. Coursework in data structures, algorithms and databases.

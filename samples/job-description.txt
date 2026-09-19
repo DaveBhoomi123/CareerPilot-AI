@@ -1,0 +1,2 @@
+Junior Django Developer
+Build and maintain Python Django applications and REST APIs. Work with PostgreSQL, SQL, HTML, CSS, JavaScript and Bootstrap. Use Git and GitHub to collaborate. Write unit tests, debug issues and explain technical decisions. Familiarity with Docker and Linux is desirable. Strong communication and problem solving skills are important.

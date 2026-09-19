@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% load chat_markdown %}
+{% block title %}AI Career Assistant · CareerPilot AI{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow">YOUR NEXT STEP, TOGETHER</div><h1>AI Career Assistant</h1><p>A little clarity for your career, one conversation at a time.</p></div></div>
+<div class="career-chat panel">
+  <div class="section-heading"><div><h2>Let's talk about your next move</h2><p class="chat-context">{{ context_label }}</p></div>
+    {% if chat_messages %}<form method="post">{% csrf_token %}<button class="btn btn-outline-primary" name="action" value="clear">Clear chat</button></form>{% endif %}
+  </div>
+  <div class="chat-transcript" role="region" aria-label="Conversation" tabindex="0">
+    {% for message in chat_messages %}
+      <article class="chat-message chat-{{ message.role }}"><strong>{% if message.role == 'user' %}You{% else %}Career Assistant <span class="chat-source">{{ message.source }}</span>{% endif %}</strong>{% if message.role == 'assistant' %}<div class="chat-markdown">{{ message.text|chat_markdown }}</div>{% else %}<div class="prose">{{ message.text }}</div>{% endif %}</article>
+    {% empty %}
+      <div class="chat-welcome"><span aria-hidden="true">✧</span><h2>What would you like to work on?</h2><p>Polish a resume, prepare for an interview, explore a role, or plan what to learn next.</p></div>
+    {% endfor %}
+  </div>
+  <div class="quick-prompts" aria-label="Suggested questions">{% for prompt in quick_prompts %}<button type="button" class="quick-prompt" data-chat-prompt="{{ prompt }}">{{ prompt }}</button>{% endfor %}</div>
+  <form method="post" class="chat-form" data-chat-form data-busy>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <details class="chat-context-picker" {% if form.errors or form.initial %}open{% endif %}><summary>Optional: use a saved resume or job analysis</summary>
+      <p class="help-text">Choose one. Resume context shares extracted text; job context shares the role, job description and skill matches, without the linked resume. Changing context starts a fresh conversation.</p>
+      <div class="chat-selects"><div><label for="{{ form.resume.id_for_label }}">Resume</label>{{ form.resume }}{{ form.resume.errors }}</div><div><label for="{{ form.analysis.id_for_label }}">Job analysis</label>{{ form.analysis }}{{ form.analysis.errors }}</div></div>
+      <label class="consent chat-consent">{{ form.share_context }} <span>{{ form.share_context.label }}</span></label>{{ form.share_context.errors }}
+    </details>
+    <label for="{{ form.message.id_for_label }}">Your message</label>{{ form.message }}{{ form.message.errors }}
+    <div class="chat-send"><p class="help-text">Sending shares your message and recent conversation with Gemini. Avoid sensitive details. The last five exchanges stay in this login session until you clear chat or log out. Replies can be mistaken; review suggestions before using them.</p><button type="submit" class="btn btn-primary">Send message →</button></div>
+    <p class="chat-loading" role="status" hidden>Thinking through your next step… Gemini may take a moment. Please keep this page open.</p>
+  </form>
+</div>
+{% endblock %}
