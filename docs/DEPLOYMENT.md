@@ -1,8 +1,8 @@
-# Deploy CareerPilot AI with Render + Neon PostgreSQL
+# Deploy CareerPilot AI with Render PostgreSQL
 
-This route uses a Render free web service and an external Neon free PostgreSQL database, subject to current regional availability and provider limits. No paid service is required for local matching. Gemini is optional and separately quota-limited.
+Deploy the Django web service on Render and connect it to a separately provisioned Render PostgreSQL database. Choose service plans according to your persistence and availability requirements. Gemini remains optional and quota-limited.
 
-Official references checked during development: [Render free services](https://render.com/docs/free), [Render Django deployment](https://render.com/docs/deploy-django), [Neon free plan](https://neon.com/docs/introduction/plans), [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing), [Django deployment checklist](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/).
+Official references checked during development: [Render free services](https://render.com/docs/free), [Render Django deployment](https://render.com/docs/deploy-django), [Render PostgreSQL setup](https://render.com/docs/postgresql-creating-connecting), [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing), [Django deployment checklist](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/).
 
 ## 1. Prepare the repository
 
@@ -10,16 +10,16 @@ Push this project to your GitHub account using README instructions. Run tests an
 
 ## 2. Create the production database
 
-1. Sign in to Neon and create a project on the **Free** plan.
-2. Choose a region near the Render service and a PostgreSQL version supported by Django (16 or newer is a reasonable choice).
-3. In Neon's connection dialog select the database and copy the PostgreSQL connection string. The direct connection is suitable for this small, single-worker app. Retain `sslmode=require`.
-4. Use this string only as a Render secret environment variable named `DATABASE_URL`. Never put the real value in the repository.
+1. In the Render dashboard, select **New → Postgres** and choose a plan appropriate for your required data lifetime.
+2. Choose the same region and account as the web service, and PostgreSQL 16 or newer.
+3. Once the database is available, copy its **Internal Database URL** from the connection details. The application already enforces `sslmode=require`, which Render internal connections support.
+4. Use this URL only as a secret environment variable named `DATABASE_URL` on the Render web service. Never put the real value in the repository. The existing Blueprint creates only the web service; provision this database separately.
 
 Production refuses to start with SQLite or an absent database URL. The app enforces database SSL when `DEBUG=False`. SQLite data is not automatically transferred; create a new production account and use sample data for your first verification.
 
 ## 3. Create the Render service
 
-Either choose **New → Blueprint**, connect the GitHub repository and use `render.yaml`, or choose **New → Web Service**, connect the repo and enter:
+Create the web service in the same region as the database. Either choose **New → Blueprint**, connect the GitHub repository and use `render.yaml`, or choose **New → Web Service**, connect the repo and enter:
 
 | Setting | Value |
 |---|---|
@@ -36,7 +36,7 @@ Use these environment variables:
 |---|---|
 | `DJANGO_SECRET_KEY` | New random secret; blueprint generates it |
 | `DEBUG` | `False` |
-| `DATABASE_URL` | Neon secret connection string |
+| `DATABASE_URL` | Render PostgreSQL Internal Database URL |
 | `ALLOWED_HOSTS` | Your exact hostname if custom; Render's assigned hostname is auto-added |
 | `CSRF_TRUSTED_ORIGINS` | `https://YOUR-SERVICE.onrender.com` (and custom HTTPS origin if used) |
 | `GEMINI_API_KEY` | Optional Google AI Studio key; blank keeps local mode |
@@ -57,13 +57,13 @@ Migrations run at startup because free web services may not offer a separate pre
 5. Add an application, change its stage, reload and check persistence.
 6. Start an interview and save an answer without AI.
 7. If you configured Gemini, opt in to suggestions and verify the result source says **Gemini**.
-8. Redeploy/restart and verify saved records remain (they live in Neon).
+8. Redeploy/restart and verify saved records remain (they live in PostgreSQL).
 
 For production checks from a trusted local shell with production environment variables set, run `python manage.py check --deploy`. Never copy credentials into command history unnecessarily; a separate ignored local env file or host secret manager is preferable.
 
 ## Free-tier constraints
 
-Render free web services sleep after inactivity and use an ephemeral filesystem. This project stores extracted resume text in PostgreSQL rather than saving uploaded files to that filesystem. Free Render PostgreSQL databases expire after 30 days; the guide uses external Neon storage to avoid that specific expiry. Neon also has free-plan storage/compute quotas and scale-to-zero behavior. Check dashboards for current allowances. Neither provider promises unlimited capacity or a permanently unchanged free plan.
+Free Render PostgreSQL databases expire after 30 days. Use a paid database for persistent hosting beyond that period. Free web services can sleep after inactivity and have an ephemeral filesystem; application records, including extracted resume text, are stored in PostgreSQL. Check Render's dashboard and documentation for current plan limits.
 
 Gemini free-tier model availability and rate limits vary. The app retains your selected model and never silently switches models. Use AI Studio's current pricing/usage display and keep billing disabled if you want a strict no-charge demo. Transient failures receive at most three retries with 1/2/4-second backoff and small jitter within an 80-second retry window. Later request timeouts shrink to the remaining window; `Retry-After` is respected or the app falls back. Every attempt counts against the daily request limit. Permanent errors fall back immediately. Read-inactivity/DNS limitations mean this window is not a strict wall-clock guarantee; the existing worker timeout remains 90 seconds.
 
@@ -71,7 +71,7 @@ Gemini free-tier model availability and rate limits vary. The app retains your s
 
 - **DisallowedHost / 400:** add the exact hostname to `ALLOWED_HOSTS`, with no scheme or path.
 - **CSRF / 403:** use an HTTPS origin in `CSRF_TRUSTED_ORIGINS`; refresh the form after deployment.
-- **Database connection error:** verify the Neon project is available, credentials are current, and SSL is enabled. Use a new secret connection string if a credential was exposed.
+- **Database connection error:** verify the Render PostgreSQL database is available, credentials are current, and SSL is enabled. Use a new secret connection string if a credential was exposed.
 - **Missing CSS:** ensure `collectstatic` completed and the vendored stylesheet was committed.
 - **Gemini local fallback:** inspect the on-screen reason, key, model access and provider quota. The app deliberately avoids displaying raw provider errors or keys.
 - **Cold start / timeout:** wait for the sleeping service to wake up. One worker limits memory use; two threads keep small requests responsive during an AI call.
