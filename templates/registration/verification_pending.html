@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block title %}Verify your email · CareerPilot AI{% endblock %}{% block content %}
+<div class="auth-header"><div class="eyebrow">ONE MORE STEP</div><h1>Verify your email</h1></div>
+<div class="panel auth-panel"><p>If an account is awaiting verification for this email, a verification link has been sent.</p><p class="muted">Check your inbox and spam folder. Links expire after 15 minutes. Your new account stays inactive until you verify your email.</p><a class="btn btn-primary w-100" href="{% url 'resend_verification' %}">Resend verification email</a><p class="text-center mt-3 mb-0"><a href="{% url 'login' %}">Back to sign in</a></p></div>
+{% endblock %}

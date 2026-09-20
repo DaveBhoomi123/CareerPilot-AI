@@ -1,16 +1,17 @@
 import json
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth.models import Group
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import UserCreationForm
+from django.db import connection, transaction
 from django.db.models import Avg, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 from .models import Resume, Analysis, Application, Interview, Question
-from .forms import ResumeForm, AnalysisForm, ApplicationForm, AnswerForm, CareerChatForm
+from .forms import ResumeForm, AnalysisForm, ApplicationForm, AnswerForm, CareerChatForm, RegistrationForm
 from .services.matching import match_resume
 from .services.ai import generate, AIUnavailable, local_suggestions, local_questions, local_feedback, local_career_reply
+from .verification import PENDING_GROUP, send_verification_email
 
 def home(request):
     if request.user.is_authenticated:
@@ -18,11 +19,25 @@ def home(request):
     return render(request, 'home.html')
 
 def signup(request):
-    form = UserCreationForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        login(request, form.save())
-        request.session['new_user_welcome'] = request.user.pk
-        return redirect('dashboard')
+    form = RegistrationForm(request.POST if request.method == 'POST' else None)
+    if request.method == 'POST':
+        with transaction.atomic():
+            # Serialize public registrations on PostgreSQL so concurrent requests
+            # cannot pass the email check together; no change to legacy User data.
+            if connection.vendor == 'postgresql':
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT pg_advisory_xact_lock(7392101)')
+            if form.is_valid():
+                user = form.save(commit=False)
+                user.is_active = False
+                user.save()
+                group, _ = Group.objects.get_or_create(name=PENDING_GROUP)
+                user.groups.add(group)
+            else:
+                user = None
+        if user is not None:
+            send_verification_email(request, user)
+            return redirect('verification_pending')
     return render(request, 'form.html', {'form': form, 'title': 'Create your account', 'subtitle': 'Your next opportunity starts here.', 'button': 'Create account'})
 
 def health(request):

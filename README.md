@@ -40,7 +40,7 @@ python manage.py runserver
 
 Open http://127.0.0.1:8000 and create your own account. There are no shared/default production credentials. On this workstation Python is bundled with Codex rather than on PATH; the prepared `.venv\Scripts\python.exe` works directly.
 
-Optional admin account: `python manage.py createsuperuser` (use the virtual environment interpreter). Visit `/admin/`. Email/password-reset delivery is intentionally outside this project's scope; a local administrator can use `python manage.py changepassword USERNAME` if needed.
+Optional admin account: `python manage.py createsuperuser` (use the virtual environment interpreter). Visit `/admin/`. Password recovery uses the registered email address. A local administrator can use `python manage.py changepassword USERNAME` if needed.
 
 ## Try a complete workflow
 
@@ -145,7 +145,7 @@ For placement preparation, read [the architecture and interview guide](docs/INTE
 
 ## Scope and practical limitations
 
-This is a portfolio application, not a commercial recruitment platform. Text-based PDFs are supported; scanned PDFs need OCR elsewhere. There is no email verification, background queue, account recovery email, antivirus scanning, or distributed abuse protection. API calls are synchronous with a timeout. Free hosts can sleep and cold starts can be slow. Resume text and feedback persist until their records are deleted. Before inviting many public users, add signup/login rate limiting, monitoring, a retention policy and backups; keep this demo's data synthetic.
+This is a portfolio application, not a commercial recruitment platform. Text-based PDFs are supported; scanned PDFs need OCR elsewhere. There is no background queue, antivirus scanning, or distributed abuse protection. API calls are synchronous with a timeout. Free hosts can sleep and cold starts can be slow. Resume text and feedback persist until their records are deleted. Before inviting many public users, add signup/login rate limiting, monitoring, a retention policy and backups; keep this demo's data synthetic.
 
 ## License
 
@@ -157,3 +157,49 @@ Project: MIT. Bootstrap 5.3.8 is bundled under MIT; its copyright/license banner
 Open **AI Career Assistant** in the sidebar after signing in. Ask a career question or use a quick prompt. Optionally select one of your own resumes or job analyses and confirm sharing it with Gemini. Selecting a different context starts a fresh chat. No document is sent when no context is selected; an analysis shares job details and skill matches, not its linked resume.
 
 The feature uses a normal Django POST form with CSRF protection and the existing server-side Gemini service (`gemini-3.8-flash`), retry budget, daily usage limit, and rule-based fallback. The API key never enters the browser. The Django session retains the last five exchanges, cleared by **Clear chat** or logout; only the last three exchanges and bounded selected context are sent with a new message. No new database models or migrations are required. Quick prompts and the loading indicator are progressive JavaScript enhancements; sending still works without JavaScript.
+
+
+## Email verification and password recovery
+
+New registrations require username, email, password and confirmation. The email is saved in Django's existing `User.email` field; case-insensitive duplicates are rejected. Public PostgreSQL registrations are serialized during validation and save. Administrative changes must also preserve email uniqueness. No existing account or email is rewritten.
+
+New accounts start with `is_active=False` and membership in the permission-free `CareerPilot email verification pending` group. This uses existing Django auth tables, with no custom user model or migration, and prevents resend from activating older administratively disabled accounts. Do not assign permissions to this bookkeeping group. Existing active users remain able to sign in.
+
+Verification uses Django timestamped signing with `max_age=900`. The signature is bound to the account's current email and password; the URL contains an encoded user ID and a signed random nonce, never an email, password, API key or signing secret. No verification token is stored in the database or session. Opening a link shows a confirmation page; clicking **Verify my email** submits a CSRF-protected POST. This avoids activation by email scanners. Activation removes the pending group and makes every verification link for that account unusable. Users then sign in normally. Expired links show a clear message and a resend option. Resending creates a fresh link with another 15-minute lifetime; earlier unexpired links remain valid only until the account is verified.
+
+**Forgot password?** uses Django's built-in reset forms, token generator and password validators. `PASSWORD_RESET_TIMEOUT=900` sets a 15-minute lifetime. Resetting the password invalidates the token. The confirmation view checks Django's token without storing it in a session or database. Both verification and reset confirmation disable caching and send `Referrer-Policy: no-referrer`. Treat email links as secrets and redact their URL paths in infrastructure access logs. Passwords are never emailed.
+
+Reset and resend requests display generic confirmation messages for both known and unknown valid email addresses. Pending accounts cannot sign in or reset a password until verification succeeds. Existing active accounts with email can recover their password; accounts without email retain normal login but require an administrator to verify ownership independently before associating an email. Legacy duplicate emails are not changed; Django can send separate reset messages for eligible accounts sharing an address. Synchronous email delivery can still cause response-time differences. Provider delivery failure leaves new accounts pending; they can request another email after configuration is corrected.
+
+### Test locally
+
+With `DEBUG=True`, the console email backend is always selected, regardless of production email environment variables. No paid email service or changes to your real `.env` are needed.
+
+1. Restart `python manage.py runserver` using the virtual environment.
+2. Register with a unique username and syntactically valid email. You should reach **Verify your email**, not the dashboard.
+3. Try signing in before verification; access must be refused.
+4. Open the link printed in the server terminal and click **Verify my email**. Sign in normally afterward.
+5. Try the same link again; it must fail. To test expiration manually, register another account and wait more than 15 minutes, then open its link and use **Resend verification email**.
+6. Sign out, choose **Forgot password?**, and request a reset using the verified email.
+7. Open the reset link from the terminal, set and confirm a new password, then check that the old password fails and the new one works. A reused or expired reset link must fail.
+
+Console delivery does not send real email. Automated tests use Django's in-memory email backend and simulated time rather than waiting 15 minutes.
+
+### Configure production email
+
+Set `DEBUG=False` and keep the existing allowed-host, HTTPS proxy and CSRF settings. Email URLs use the request's validated hostname: local links preserve the port, and Render's proxy produces HTTPS links. Keep the production Django secret stable; rotating it invalidates links unless you explicitly configure Django's fallback-key mechanism.
+
+For SMTP, set these privately in Render:
+
+- `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`
+- `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`
+- `EMAIL_USE_TLS=True` for a STARTTLS-capable provider (usually port 587)
+- `DEFAULT_FROM_EMAIL` with a provider-verified sender
+
+[Render free web services block SMTP ports 25, 465 and 587](https://render.com/docs/free). For those services, an optional HTTPS Resend backend is included. Set only:
+
+- `EMAIL_BACKEND=assistant.email_backends.ResendEmailBackend`
+- `RESEND_API_KEY`
+- `DEFAULT_FROM_EMAIL` with a Resend-verified sender/domain
+
+SMTP variables are unused with the HTTPS backend. Resend's provider account, sender verification and quotas must be configured separately; no account, payment, deployment or real email delivery is performed by this code change. All provider secrets come from environment variables. Live delivery must be smoke-tested after configuration. The backend sends the plain-text verification/reset emails over HTTPS with bounded timeouts and does not log credentials, tokens or raw provider errors.

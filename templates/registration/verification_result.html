@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block title %}Email verification · CareerPilot AI{% endblock %}{% block content %}
+<div class="auth-header"><div class="eyebrow">YOUR CAREERPILOT ACCOUNT</div><h1>{% if verification_status == 'success' %}Email verified{% elif verification_status == 'confirm' %}Confirm your email{% elif verification_status == 'expired' %}Verification link expired{% else %}Verification link unavailable{% endif %}</h1></div>
+<div class="panel auth-panel">
+{% if verification_status == 'success' %}<p>Your email is verified. You can now sign in.</p><a class="btn btn-primary w-100" href="{% url 'login' %}">Sign in</a>
+{% elif verification_status == 'confirm' %}<p>Confirm to activate your account and start using CareerPilot AI.</p><form method="post" action="{{ request.path }}" data-busy>{% csrf_token %}<button class="btn btn-primary w-100" type="submit">Verify my email</button></form>
+{% else %}<p>{% if verification_status == 'expired' %}This verification link has expired.{% else %}This verification link is invalid or has already been used.{% endif %}</p><a class="btn btn-primary w-100" href="{% url 'resend_verification' %}">Resend verification email</a><p class="text-center mt-3 mb-0"><a href="{% url 'login' %}">Back to sign in</a></p>{% endif %}
+</div>{% endblock %}

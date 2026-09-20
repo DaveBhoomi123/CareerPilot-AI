@@ -21,7 +21,7 @@ from .services.ai import generate, AIUnavailable
 RESUME = 'Python Django SQL Git HTML CSS Bootstrap developer. Built REST APIs and tested a student project with SQLite.'
 JOB = 'Seeking a Python Django developer with SQL Git Docker PostgreSQL and communication skills to build REST APIs.'
 
-@override_settings(STORAGES={'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'}, 'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}}, GEMINI_API_KEY='')
+@override_settings(STORAGES={'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'}, 'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}}, GEMINI_API_KEY='', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class WorkflowTests(TestCase):
     def setUp(self):
         sleeper = patch('assistant.services.ai.time.sleep')
@@ -33,12 +33,22 @@ class WorkflowTests(TestCase):
         self.resume = Resume.objects.create(owner=self.user, title='Backend resume', text=RESUME)
         self.analysis = Analysis.objects.create(owner=self.user, resume=self.resume, role='Django Developer', job_description=JOB, **match_resume(RESUME, JOB))
 
+    def verify_registered_user(self, username):
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        from .verification import make_verification_token
+        user = get_user_model().objects.get(username=username)
+        url = reverse('verify_email', kwargs={'uidb64': urlsafe_base64_encode(force_bytes(user.pk)), 'token': make_verification_token(user)})
+        self.assertContains(self.client.post(url), 'Email verified')
+
     def test_auth_signup_login_logout(self):
         self.client.logout()
         self.assertEqual(self.client.get('/dashboard/').status_code, 302)
         self.assertEqual(self.client.get('/').status_code, 200)
-        response = self.client.post('/accounts/signup/', {'username': 'newperson', 'password1': 'New-person-test-2049', 'password2': 'New-person-test-2049'})
-        self.assertRedirects(response, '/dashboard/')
+        response = self.client.post('/accounts/signup/', {'username': 'newperson', 'email': 'newperson@example.com', 'password1': 'New-person-test-2049', 'password2': 'New-person-test-2049'})
+        self.assertRedirects(response, reverse('verification_pending'))
+        self.verify_registered_user('newperson')
+        self.assertTrue(self.client.login(username='newperson', password='New-person-test-2049'))
         self.assertEqual(self.client.get('/accounts/logout/').status_code, 405)
         self.assertEqual(self.client.post('/accounts/logout/').status_code, 302)
         self.assertTrue(self.client.login(username='newperson', password='New-person-test-2049'))
@@ -46,9 +56,11 @@ class WorkflowTests(TestCase):
     def test_new_user_dashboard_welcome_is_shown_once(self):
         self.client.logout()
         response = self.client.post(reverse('signup'), {
-            'username': 'newperson', 'password1': 'New-person-test-2049',
+            'username': 'newperson', 'email': 'newperson@example.com', 'password1': 'New-person-test-2049',
             'password2': 'New-person-test-2049',
         }, follow=True)
+        self.verify_registered_user('newperson')
+        response = self.client.post(reverse('login'), {'username': 'newperson', 'password': 'New-person-test-2049'}, follow=True)
         self.assertContains(response, 'Welcome, newperson')
         self.assertNotContains(response, 'Welcome back, newperson')
         self.assertNotIn('new_user_welcome', self.client.session)

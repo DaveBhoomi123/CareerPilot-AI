@@ -1,0 +1,12 @@
+{% autoescape off %}Hello {{ user.get_username }},
+
+Confirm your email to activate your CareerPilot AI account:
+
+{{ verification_url }}
+
+Open the link and select "Verify my email". The link expires in 15 minutes and cannot be reused after verification.
+If it expires, use "Resend verification email" on the sign-in page.
+If you did not create this account, ignore this email. Do not share the link.
+
+CareerPilot AI
+{% endautoescape %}
