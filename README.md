@@ -167,7 +167,7 @@ New accounts start with `is_active=False` and membership in the permission-free 
 
 Verification uses Django timestamped signing with `max_age=900`. The signature is bound to the account's current email and password; the URL contains an encoded user ID and a signed random nonce, never an email, password, API key or signing secret. No verification token is stored in the database or session. Opening a link shows a confirmation page; clicking **Verify my email** submits a CSRF-protected POST. This avoids activation by email scanners. Activation removes the pending group and makes every verification link for that account unusable. Users then sign in normally. Expired links show a clear message and a resend option. Resending creates a fresh link with another 15-minute lifetime; earlier unexpired links remain valid only until the account is verified.
 
-**Forgot password?** uses Django's built-in reset forms, token generator and password validators. `PASSWORD_RESET_TIMEOUT=900` sets a 15-minute lifetime. Resetting the password invalidates the token. The confirmation view checks Django's token without storing it in a session or database. Both verification and reset confirmation disable caching and send `Referrer-Policy: no-referrer`. Treat email links as secrets and redact their URL paths in infrastructure access logs. Passwords are never emailed.
+**Forgot password?** uses Django's built-in reset forms, token generator and password validators. `PASSWORD_RESET_TIMEOUT=900` sets a 15-minute lifetime. Resetting the password invalidates the token. The confirmation view checks Django's token without storing it in a session or database. Both verification and reset confirmation disable caching and send `Referrer-Policy: same-origin`. Treat email links as secrets and redact their URL paths in infrastructure access logs. Passwords are never emailed.
 
 Reset and resend requests display generic confirmation messages for both known and unknown valid email addresses. Pending accounts cannot sign in or reset a password until verification succeeds. Existing active accounts with email can recover their password; accounts without email retain normal login but require an administrator to verify ownership independently before associating an email. Legacy duplicate emails are not changed; Django can send separate reset messages for eligible accounts sharing an address. Synchronous email delivery can still cause response-time differences. Provider delivery failure leaves new accounts pending; they can request another email after configuration is corrected.
 
@@ -196,10 +196,14 @@ For SMTP, set these privately in Render:
 - `EMAIL_USE_TLS=True` for a STARTTLS-capable provider (usually port 587)
 - `DEFAULT_FROM_EMAIL` with a provider-verified sender
 
-[Render free web services block SMTP ports 25, 465 and 587](https://render.com/docs/free). For those services, an optional HTTPS Resend backend is included. Set only:
+[Render free web services block SMTP ports 25, 465 and 587](https://render.com/docs/free). For those services, an optional HTTPS Brevo backend is included. Set only:
 
-- `EMAIL_BACKEND=assistant.email_backends.ResendEmailBackend`
-- `RESEND_API_KEY`
-- `DEFAULT_FROM_EMAIL` with a Resend-verified sender/domain
+- `EMAIL_BACKEND=assistant.email_backends.BrevoEmailBackend`
+- `BREVO_API_KEY`
+- `DEFAULT_FROM_EMAIL` with a Brevo-verified sender/domain
 
-SMTP variables are unused with the HTTPS backend. Resend's provider account, sender verification and quotas must be configured separately; no account, payment, deployment or real email delivery is performed by this code change. All provider secrets come from environment variables. Live delivery must be smoke-tested after configuration. The backend sends the plain-text verification/reset emails over HTTPS with bounded timeouts and does not log credentials, tokens or raw provider errors.
+SMTP variables are unused with the HTTPS backend. Brevo's provider account, sender verification and quotas must be configured separately; no account, payment, deployment or real email delivery is performed by this code change. All provider secrets come from environment variables. Live delivery must be smoke-tested after configuration. The backend sends the plain-text verification/reset emails over HTTPS with bounded timeouts and does not log credentials, tokens or raw provider errors.
+
+In Render, add these three email variables in the web service Environment settings after verifying your sender in Brevo. Use a Brevo API key, not an SMTP key; remove obsolete `RESEND_API_KEY` configuration when switching providers. Do not put credentials in Git. `DEBUG=True` continues to force console delivery.
+
+The [Brevo transactional API](https://developers.brevo.com/reference/send-transac-email) receives `sender`, `to`, `subject`, and `textContent` at `https://api.brevo.com/v3/smtp/email`, authenticated by the `api-key` header. HTML alternatives are sent as `htmlContent`; plain-text emails remain supported. HTTP 201 means accepted by Brevo, not guaranteed inbox delivery. Requests use 5-second connection and 10-second read timeouts without redirects or automatic retries. Rejections and transport failures raise sanitized exceptions (or return zero for failed messages with `fail_silently=True`) and log a safe diagnostic. Attachments are not supported by this application backend. Automated provider tests mock HTTP and send no real emails.

@@ -49,7 +49,7 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL') or 'CareerPilot AI <noreply
 EMAIL_TIMEOUT = 10
 PASSWORD_RESET_TIMEOUT = 15 * 60
 EMAIL_VERIFICATION_TIMEOUT = 15 * 60
-RESEND_API_KEY = os.getenv('RESEND_API_KEY', '')
+BREVO_API_KEY = os.getenv('BREVO_API_KEY', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 try:

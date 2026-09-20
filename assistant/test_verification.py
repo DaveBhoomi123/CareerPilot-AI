@@ -196,21 +196,73 @@ class VerificationTests(TestCase):
         self.assertFalse(get_user_model().objects.get(username='mailfailed').is_active)
 
 
+@override_settings(BREVO_API_KEY='synthetic-brevo-key',
+    DEFAULT_FROM_EMAIL='CareerPilot AI <sender@example.com>',
+    EMAIL_BACKEND='assistant.email_backends.BrevoEmailBackend')
 class HttpEmailBackendTests(TestCase):
-    @override_settings(RESEND_API_KEY='test-provider-key')
-    @patch('assistant.email_backends.requests.post')
-    def test_http_transport_and_safe_failure(self, post):
-        from .email_backends import ResendEmailBackend
+    def setUp(self):
+        self.patcher = patch('assistant.email_backends.requests.post')
+        self.post = self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+        self.response = Mock(status_code=201)
+        self.post.return_value.__enter__.return_value = self.response
+
+    def test_send_mail_payload_and_authentication(self):
+        from django.core.mail import send_mail
+        self.assertEqual(send_mail('Verify email', 'Synthetic body', None, ['recipient@example.com']), 1)
+        self.post.assert_called_once_with('https://api.brevo.com/v3/smtp/email',
+            headers={'api-key': 'synthetic-brevo-key', 'Accept': 'application/json'},
+            json={'sender': {'email': 'sender@example.com', 'name': 'CareerPilot AI'},
+                  'to': [{'email': 'recipient@example.com'}], 'subject': 'Verify email',
+                  'textContent': 'Synthetic body'}, timeout=(5, 10), allow_redirects=False)
+
+    def test_html_alternative_and_recipient_fields(self):
+        from django.core.mail import EmailMultiAlternatives
+        message = EmailMultiAlternatives('Hello', 'Plain body', to=['Reader <reader@example.com>'],
+            cc=['copy@example.com'], bcc=['hidden@example.com'], reply_to=['reply@example.com'])
+        message.attach_alternative('<p>Hello</p>', 'text/html')
+        self.assertEqual(message.send(), 1)
+        payload = self.post.call_args.kwargs['json']
+        self.assertEqual(payload['textContent'], 'Plain body')
+        self.assertEqual(payload['htmlContent'], '<p>Hello</p>')
+        self.assertEqual(payload['to'], [{'email': 'reader@example.com', 'name': 'Reader'}])
+        self.assertEqual(payload['cc'], [{'email': 'copy@example.com'}])
+        self.assertEqual(payload['bcc'], [{'email': 'hidden@example.com'}])
+        self.assertEqual(payload['replyTo'], {'email': 'reply@example.com'})
+
+    def test_api_rejections_never_count_as_sent(self):
+        from django.core.mail import send_mail
+        for status in [302, 400, 401, 429, 500]:
+            with self.subTest(status=status), self.assertLogs('assistant.email_backends') as logs:
+                self.response.status_code = status
+                self.response.text = 'synthetic-brevo-key private provider response'
+                with self.assertRaisesMessage(RuntimeError, f'HTTP {status}'):
+                    send_mail('Subject', 'Body', None, ['recipient@example.com'])
+                self.assertEqual(send_mail('Subject', 'Body', None, ['recipient@example.com'], fail_silently=True), 0)
+                self.assertNotIn('synthetic-brevo-key', str(logs.output))
+                self.assertNotIn('private provider response', str(logs.output))
+
+    @override_settings(BREVO_API_KEY='')
+    def test_missing_api_key_fails_before_http(self):
+        from django.core.mail import send_mail
+        with self.assertLogs('assistant.email_backends'):
+            with self.assertRaisesMessage(RuntimeError, 'requires BREVO_API_KEY'):
+                send_mail('Subject', 'Body', None, ['recipient@example.com'])
+            self.assertEqual(send_mail('Subject', 'Body', None, ['recipient@example.com'], fail_silently=True), 0)
+        self.post.assert_not_called()
+
+    def test_transport_failure_does_not_expose_secrets(self):
+        import requests
+        from django.core.mail import send_mail
+        self.post.side_effect = requests.Timeout('synthetic-brevo-key private request')
+        with self.assertLogs('assistant.email_backends') as logs:
+            with self.assertRaisesMessage(RuntimeError, 'Brevo HTTPS request failed') as error:
+                send_mail('Subject', 'Body', None, ['recipient@example.com'])
+        self.assertNotIn('synthetic-brevo-key', str(error.exception) + str(logs.output))
+
+    def test_empty_messages_and_no_recipients_do_not_send(self):
+        from .email_backends import BrevoEmailBackend
         from django.core.mail import EmailMessage
-        response = Mock(status_code=200)
-        post.return_value.__enter__.return_value = response
-        message = EmailMessage('Verify email', 'Synthetic body', 'sender@example.com', ['recipient@example.com'])
-        backend = ResendEmailBackend()
-        self.assertEqual(backend.send_messages([message]), 1)
-        self.assertEqual(post.call_args.args[0], 'https://api.resend.com/emails')
-        self.assertEqual(post.call_args.kwargs['json']['to'], ['recipient@example.com'])
-        self.assertFalse(post.call_args.kwargs['allow_redirects'])
-        response.status_code = 401
-        with self.assertRaisesMessage(RuntimeError, 'Email delivery failed. Check server email configuration.'):
-            backend.send_messages([message])
-        self.assertEqual(ResendEmailBackend(fail_silently=True).send_messages([message]), 0)
+        self.assertEqual(BrevoEmailBackend().send_messages([]), 0)
+        self.assertEqual(BrevoEmailBackend().send_messages([EmailMessage('Subject', 'Body')]), 0)
+        self.post.assert_not_called()
