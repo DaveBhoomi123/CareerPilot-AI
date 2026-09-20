@@ -1,6 +1,11 @@
 from django.conf import settings
 from django.db import models
 
+class UserState(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    has_seen_dashboard = models.BooleanField(default=False)
+
+
 class Resume(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     title = models.CharField(max_length=120)

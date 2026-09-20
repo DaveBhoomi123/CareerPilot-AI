@@ -67,7 +67,6 @@ def verify_email(request, uidb64, token):
                     updated = get_user_model().objects.filter(pk=user.pk, is_active=False).update(is_active=True)
                     if updated:
                         user.groups.remove(*user.groups.filter(name=PENDING_GROUP))
-                        request.session['new_user_welcome'] = user.pk
                         status = 'success'
                     else:
                         status = 'invalid'

@@ -13,7 +13,7 @@ from django.urls import reverse
 from docx import Document
 from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
-from .models import Resume, Analysis, Application, Interview, Question, AIUsage
+from .models import Resume, Analysis, Application, Interview, Question, AIUsage, UserState
 from .services.extraction import extract_resume
 from .services.matching import match_resume, skills_in
 from .services.ai import generate, AIUnavailable
@@ -72,6 +72,7 @@ class WorkflowTests(TestCase):
         self.assertContains(response, 'Welcome back, newperson')
 
     def test_existing_user_dashboard_welcome(self):
+        UserState.objects.create(user=self.user, has_seen_dashboard=True)
         self.assertContains(self.client.get(reverse('dashboard')), 'Welcome back, candidate')
 
     def test_sidebar_logout_secure_login_cycle(self):

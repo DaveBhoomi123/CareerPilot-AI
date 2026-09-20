@@ -7,7 +7,7 @@ from django.db.models import Avg, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
-from .models import Resume, Analysis, Application, Interview, Question
+from .models import Resume, Analysis, Application, Interview, Question, UserState
 from .forms import ResumeForm, AnalysisForm, ApplicationForm, AnswerForm, CareerChatForm, RegistrationForm
 from .services.matching import match_resume
 from .services.ai import generate, AIUnavailable, local_suggestions, local_questions, local_feedback, local_career_reply
@@ -31,6 +31,7 @@ def signup(request):
                 user = form.save(commit=False)
                 user.is_active = False
                 user.save()
+                UserState.objects.create(user=user)
                 group, _ = Group.objects.get_or_create(name=PENDING_GROUP)
                 user.groups.add(group)
             else:
@@ -44,11 +45,16 @@ def health(request):
     return JsonResponse({'status': 'ok'})
 
 @login_required
+@transaction.atomic
 def dashboard(request):
+    UserState.objects.get_or_create(user=request.user)
+    # A conditional update lets only one concurrent request claim the greeting.
+    # The transaction rolls back if rendering the dashboard fails.
+    first_visit = UserState.objects.filter(user=request.user, has_seen_dashboard=False).update(has_seen_dashboard=True)
     analyses = Analysis.objects.filter(owner=request.user).order_by('-created_at')
     applications = Application.objects.filter(owner=request.user)
     return render(request, 'dashboard.html', {
-        'first_dashboard_visit': request.session.pop('new_user_welcome', None) == request.user.pk,
+        'first_dashboard_visit': bool(first_visit),
         'analyses': analyses[:4], 'resume_count': Resume.objects.filter(owner=request.user).count(),
         'analysis_count': analyses.count(), 'average': analyses.aggregate(n=Avg('score'))['n'] or 0,
         'application_count': applications.count(), 'interview_count': applications.filter(status='interview').count(),
