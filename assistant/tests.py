@@ -43,6 +43,25 @@ class WorkflowTests(TestCase):
         self.assertEqual(self.client.post('/accounts/logout/').status_code, 302)
         self.assertTrue(self.client.login(username='newperson', password='New-person-test-2049'))
 
+    def test_new_user_dashboard_welcome_is_shown_once(self):
+        self.client.logout()
+        response = self.client.post(reverse('signup'), {
+            'username': 'newperson', 'password1': 'New-person-test-2049',
+            'password2': 'New-person-test-2049',
+        }, follow=True)
+        self.assertContains(response, 'Welcome, newperson')
+        self.assertNotContains(response, 'Welcome back, newperson')
+        self.assertNotIn('new_user_welcome', self.client.session)
+        self.assertContains(self.client.get(reverse('dashboard')), 'Welcome back, newperson')
+        self.client.post(reverse('logout'))
+        response = self.client.post(reverse('login'), {
+            'username': 'newperson', 'password': 'New-person-test-2049',
+        }, follow=True)
+        self.assertContains(response, 'Welcome back, newperson')
+
+    def test_existing_user_dashboard_welcome(self):
+        self.assertContains(self.client.get(reverse('dashboard')), 'Welcome back, candidate')
+
     def test_sidebar_logout_secure_login_cycle(self):
         strict = Client(enforce_csrf_checks=True)
         login_url = reverse('login')

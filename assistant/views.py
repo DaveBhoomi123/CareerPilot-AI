@@ -21,6 +21,7 @@ def signup(request):
     form = UserCreationForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         login(request, form.save())
+        request.session['new_user_welcome'] = request.user.pk
         return redirect('dashboard')
     return render(request, 'form.html', {'form': form, 'title': 'Create your account', 'subtitle': 'Your next opportunity starts here.', 'button': 'Create account'})
 
@@ -32,6 +33,7 @@ def dashboard(request):
     analyses = Analysis.objects.filter(owner=request.user).order_by('-created_at')
     applications = Application.objects.filter(owner=request.user)
     return render(request, 'dashboard.html', {
+        'first_dashboard_visit': request.session.pop('new_user_welcome', None) == request.user.pk,
         'analyses': analyses[:4], 'resume_count': Resume.objects.filter(owner=request.user).count(),
         'analysis_count': analyses.count(), 'average': analyses.aggregate(n=Avg('score'))['n'] or 0,
         'application_count': applications.count(), 'interview_count': applications.filter(status='interview').count(),
